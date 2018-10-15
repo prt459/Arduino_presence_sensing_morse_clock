@@ -15,8 +15,6 @@
 #include <Wire.h>
 #include "RTClib.h"
 
-DS1307 rtc;
-
 #define C 294
 #define D 293
 #define E 329
@@ -26,25 +24,68 @@ DS1307 rtc;
 
 #define PIP_HZ 440
 #define PIP_DURN_MS 5
+#define CW_TONE_HZ 700
 #define CHIME_DURN_MS 1000
+#define CW_DASH_LEN        5  // length of dash (in dots)
+#define PIN_TONE_OUT 7        // piez0/buzzer/transducer on this Arduino digital pin
 
-//time_t t;
-//TimeElements te; 
+int dot_length_ms = 60;    // keyer base speed (60 equates to 10 w.p.m.)
+int freq=PIP_HZ;           // freq of the second pip
+// unsigned int secs=1;
+byte j,k;  
+DS1307 rtc;                // the RTC object
 
 
-int freq=PIP_HZ;
-unsigned int secs=1;
+void send_dot() {
+  delay(dot_length_ms);  // wait for one dot period (space)
+  tone(PIN_TONE_OUT, CW_TONE_HZ);
+  Serial.print(".");
+  delay(dot_length_ms);  // key down for one dot period
+  noTone(PIN_TONE_OUT);
+}
+
+void send_dash() {
+  delay(dot_length_ms);  // wait for one dot period (space)
+  tone(PIN_TONE_OUT, CW_TONE_HZ);
+  Serial.print("-");
+  delay(dot_length_ms * CW_DASH_LEN);  // key down for CW_DASH_LEN dot periods
+  noTone(PIN_TONE_OUT);
+}
+
+void send_letter_space() {
+  delay(dot_length_ms * 4);  // wait for 3 dot periods
+  Serial.print(" ");
+}
+
+void send_digit(byte n) {
+  // n is the clock digit to be enunciated  
+  Serial.print("send_digit(");
+  Serial.print(n);
+  Serial.println(")");
+  if((n>=1)&&(n<=4))  // n == 1, 2, 3, 4 or 5
+  {   
+    for(j=1; j<=n); j++) send_dot(); 
+    for(k=5; k>n; k--) send_dash(); 
+  }
+  else
+  {
+    // n == 6, 7, 8, 9, 0
+    for(j=6; j<=n); j++) send_dash(); 
+    for(k=10; k>n; k--) send_dot(); 
+  };
+  send_letter_space();
+}
 
 void pip(int hz, int ms)
 {
-  tone(7, hz); 
+  tone(PIN_TONE_OUT, hz); 
   delay(ms);        
-  noTone(7);      
+  noTone(PIN_TONE_OUT);      
 }
 
 void setup () {
   Serial.begin(9600);
-  pinMode(7, OUTPUT);  // piezo 
+  pinMode(PIN_TONE_OUT, OUTPUT);  // piezo 
   Wire.begin();
   rtc.begin();
 
@@ -54,7 +95,6 @@ void setup () {
     rtc.adjust(DateTime(__DATE__, __TIME__));
   }
 }
-
 
 void loop () {
     digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on 
@@ -107,7 +147,26 @@ void loop () {
     Serial.print(now.hour(), DEC);     Serial.print(':');
     Serial.print(now.minute(), DEC);   Serial.print(':');
     Serial.print(now.second(), DEC);
-    
     Serial.println();
-    delay(1000);
+
+    // get the time HHMM as four bytes and send each of the 4 digits in morse
+    byte h = (byte)(now.hour()/10);  // hour MSB
+    if(h>0) send_digit(h);
+    h = now.hour()%10;               // hour LSB
+    send_digit(h);
+
+    // send ':'
+    // send_dash(); send_dash(); send_dash(); send_dot(); send_dot(); send_dot();
+
+    // alternate option; send a two-tone pip-pip
+    pip(CW_TONE_HZ, dot_length_ms);  
+    pip(CW_TONE_HZ-100, dot_length_ms);  
+    send_letter_space()
+
+    h = (byte)now.minute()/10;  // minute MSB
+    send_digit(h);
+    h = now.minute()%10;        // minute LSB
+    send_digit(h);
+  
+    delay(10000);
 }
